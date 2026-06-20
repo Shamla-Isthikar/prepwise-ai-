@@ -9,6 +9,10 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: (() => {
+      const url = process.env["DATABASE_URL_POSTGRES"];
+      if (!url) throw new Error("Environment variable DATABASE_URL_POSTGRES is not set");
+      return url;
+    })(),
   },
 });
