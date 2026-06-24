@@ -6,131 +6,140 @@ import { signToken, cookieOptions } from "@/lib/auth";
 
 
 export async function POST(req: NextRequest) {
-  const action = req.nextUrl.searchParams.get("action");
-
-  if (action === "logout") {
-    const res = NextResponse.redirect(new URL("/auth", req.url));
-
-    res.cookies.set({
-      ...cookieOptions,
-      maxAge: 0,
-      value: "",
-    });
-
-    return res;
-  }
-
-  let body: {
-    name?: string;
-    email?: string;
-    password?: string;
-  };
-
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON" },
-      { status: 400 }
-    );
-  }
+    const action = req.nextUrl.searchParams.get("action");
 
-  const { name, email, password } = body;
+    if (action === "logout") {
+      const res = NextResponse.redirect(new URL("/auth", req.url));
 
-  if (!email || !password) {
-    return NextResponse.json(
-      { error: "Email and password are required" },
-      { status: 400 }
-    );
-  }
+      res.cookies.set({
+        ...cookieOptions,
+        maxAge: 0,
+        value: "",
+      });
 
-  if (action === "signup") {
-    if (!name) {
+      return res;
+    }
+
+    let body: {
+      name?: string;
+      email?: string;
+      password?: string;
+    };
+
+    try {
+      body = await req.json();
+    } catch {
       return NextResponse.json(
-        { error: "Name is required" },
+        { error: "Invalid JSON" },
         { status: 400 }
       );
     }
 
-    const existing = await prisma.user.findUnique({
-      where: { email },
-    });
+    const { name, email, password } = body;
 
-    if (existing) {
+    if (!email || !password) {
       return NextResponse.json(
-        { error: "Email already in use" },
-        { status: 409 }
+        { error: "Email and password are required" },
+        { status: 400 }
       );
     }
 
-    const hashed = await hash(password, 12);
+    if (action === "signup") {
+      if (!name) {
+        return NextResponse.json(
+          { error: "Name is required" },
+          { status: 400 }
+        );
+      }
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashed,
-      },
-    });
+      const existing = await prisma.user.findUnique({
+        where: { email },
+      });
 
-    const token = await signToken({
-      sub: user.id,
-      name: user.name,
-      email: user.email,
-    });
+      if (existing) {
+        return NextResponse.json(
+          { error: "Email already in use" },
+          { status: 409 }
+        );
+      }
 
-    const res = NextResponse.json({ ok: true });
+      const hashed = await hash(password, 12);
 
-    res.cookies.set({
-      ...cookieOptions,
-      value: token,
-    });
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashed,
+        },
+      });
 
-    return res;
-  }
+      const token = await signToken({
+        sub: user.id,
+        name: user.name,
+        email: user.email,
+      });
 
-  if (action === "login") {
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+      const res = NextResponse.json({ ok: true });
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
+      res.cookies.set({
+        ...cookieOptions,
+        value: token,
+      });
+
+      return res;
     }
 
-    const valid = await compare(
-      password,
-      user.password
+    if (action === "login") {
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        return NextResponse.json(
+          { error: "Invalid credentials" },
+          { status: 401 }
+        );
+      }
+
+      const valid = await compare(
+        password,
+        user.password
+      );
+
+      if (!valid) {
+        return NextResponse.json(
+          { error: "Invalid credentials" },
+          { status: 401 }
+        );
+      }
+
+      const token = await signToken({
+        sub: user.id,
+        name: user.name,
+        email: user.email,
+      });
+
+      const res = NextResponse.json({ ok: true });
+
+      res.cookies.set({
+        ...cookieOptions,
+        value: token,
+      });
+
+      return res;
+    }
+
+    return NextResponse.json(
+      { error: "Unknown action" },
+      { status: 400 }
     );
+  } catch (error) {
+    console.error("Auth route failed", error);
 
-    if (!valid) {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
-    }
-
-    const token = await signToken({
-      sub: user.id,
-      name: user.name,
-      email: user.email,
-    });
-
-    const res = NextResponse.json({ ok: true });
-
-    res.cookies.set({
-      ...cookieOptions,
-      value: token,
-    });
-
-    return res;
+    return NextResponse.json(
+      { error: "Could not connect to the database. Please check your database connection and try again." },
+      { status: 503 }
+    );
   }
-
-  return NextResponse.json(
-    { error: "Unknown action" },
-    { status: 400 }
-  );
 }
